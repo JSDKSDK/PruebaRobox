@@ -1,0 +1,59 @@
+[
+  {
+    "id": "loadstring",
+    "severity": "high",
+    "patterns": ["loadstring%s*%("],
+    "message": "Uso de loadstring (código dinámico)."
+  },
+  {
+    "id": "httpget",
+    "severity": "high",
+    "patterns": ["HttpGetAsync%s*%(", "HttpGet%s*%("],
+    "message": "Descarga remota estilo HttpGet/HttpGetAsync."
+  },
+  {
+    "id": "getset_fenv",
+    "severity": "high",
+    "patterns": ["getfenv%s*%(", "setfenv%s*%("],
+    "message": "Manipulación de entorno (getfenv/setfenv)."
+  },
+  {
+    "id": "http_request",
+    "severity": "medium",
+    "patterns": [
+      "RequestAsync%s*%(",
+      "PostAsync%s*%(",
+      "GetAsync%s*%(",
+      "HttpService"
+    ],
+    "message": "Uso de HttpService / requests HTTP."
+  },
+  {
+    "id": "require_asset",
+    "severity": "medium",
+    "patterns": ["require%s*%(%s*%d%d%d%d+"],
+    "message": "require() de un AssetId numérico."
+  },
+  {
+    "id": "inject_sss",
+    "severity": "high",
+    "patterns": [
+      "ServerScriptService.*Instance%.new%s*%(%s*[\"']Script[\"']",
+      "Instance%.new%s*%(%s*[\"']Script[\"'].*ServerScriptService",
+      "%.Source%s*="
+    ],
+    "message": "Posible inyección de Script / escritura de Source en el place."
+  },
+  {
+    "id": "obfuscation_blob",
+    "severity": "medium",
+    "patterns": ["\\x%x%x", "string%.char%s*%(", "base64"],
+    "message": "Señales típicas de ofuscación."
+  },
+  {
+    "id": "external_url",
+    "severity": "medium",
+    "patterns": ["https?://[%w%p]+"],
+    "message": "URL http(s) embebida en el código."
+  }
+]

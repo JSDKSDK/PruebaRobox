@@ -1,0 +1,13 @@
+# Builds / places
+*.rbxl
+*.rbxlx
+*.rbxm
+*.rbxmx
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+
+# Tooling caches
+sourcemap.json

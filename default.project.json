@@ -1,0 +1,11 @@
+{
+  "name": "PluginGuard",
+  "tree": {
+    "$className": "DataModel",
+    "ServerStorage": {
+      "PluginGuard": {
+        "$path": "src"
+      }
+    }
+  }
+}
