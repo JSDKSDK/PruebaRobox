@@ -3,57 +3,126 @@
     "id": "loadstring",
     "severity": "high",
     "patterns": ["loadstring%s*%("],
-    "message": "Uso de loadstring (código dinámico)."
-  },
-  {
-    "id": "httpget",
-    "severity": "high",
-    "patterns": ["HttpGetAsync%s*%(", "HttpGet%s*%("],
-    "message": "Descarga remota estilo HttpGet/HttpGetAsync."
+    "message": "Uso de loadstring (código dinámico / RCE)."
   },
   {
     "id": "getset_fenv",
     "severity": "high",
     "patterns": ["getfenv%s*%(", "setfenv%s*%("],
-    "message": "Manipulación de entorno (getfenv/setfenv)."
+    "message": "Manipulación de entorno (getfenv/setfenv), típica de ofuscación/backdoors."
+  },
+  {
+    "id": "require_asset",
+    "severity": "high",
+    "patterns": ["require%s*%(%s*%d+%s*%)"],
+    "message": "require() de AssetId numérico (módulo remoto actualizable)."
+  },
+  {
+    "id": "require_tonumber",
+    "severity": "high",
+    "patterns": ["require%s*%(%s*tonumber"],
+    "message": "require(tonumber(...)): evasión típica de escáneres estáticos."
+  },
+  {
+    "id": "httpget",
+    "severity": "high",
+    "patterns": ["HttpGetAsync%s*%(", "HttpGet%s*%(", ":GetAsync%s*%("],
+    "message": "Descarga HTTP remota (HttpGet/GetAsync)."
+  },
+  {
+    "id": "http_post",
+    "severity": "high",
+    "patterns": [":PostAsync%s*%("],
+    "message": "PostAsync: posible exfiltración (webhooks, servidores externos)."
   },
   {
     "id": "http_request",
     "severity": "medium",
-    "patterns": [
-      "RequestAsync%s*%(",
-      "PostAsync%s*%(",
-      "GetAsync%s*%(",
-      "HttpService"
-    ],
-    "message": "Uso de HttpService / requests HTTP."
+    "patterns": [":RequestAsync%s*%(", "HttpService"],
+    "message": "Uso de HttpService / RequestAsync."
   },
   {
-    "id": "require_asset",
+    "id": "string_char_obfuscation",
     "severity": "medium",
-    "patterns": ["require%s*%(%s*%d%d%d%d+"],
-    "message": "require() de un AssetId numérico."
+    "patterns": ["string%.char%s*%("],
+    "message": "string.char: construcción dinámica de strings (ofuscación frecuente)."
   },
   {
-    "id": "inject_sss",
+    "id": "string_reverse_obfuscation",
+    "severity": "medium",
+    "patterns": ["string%.reverse%s*%("],
+    "message": "string.reverse: evasión típica de firmas estáticas."
+  },
+  {
+    "id": "decimal_byte_escape",
     "severity": "high",
-    "patterns": [
-      "ServerScriptService.*Instance%.new%s*%(%s*[\"']Script[\"']",
-      "Instance%.new%s*%(%s*[\"']Script[\"'].*ServerScriptService",
-      "%.Source%s*="
-    ],
-    "message": "Posible inyección de Script / escritura de Source en el place."
+    "patterns": ["\\\\%d+\\\\%d+\\\\%d+"],
+    "message": "Secuencias de escape decimal (\\114\\101...): ofuscación de inyectores."
   },
   {
-    "id": "obfuscation_blob",
+    "id": "hex_escape",
     "severity": "medium",
-    "patterns": ["\\x%x%x", "string%.char%s*%(", "base64"],
-    "message": "Señales típicas de ofuscación."
+    "patterns": ["\\\\x%x%x\\\\x%x%x"],
+    "message": "Escapes hexadecimales encadenados (\\x..\\x..)."
+  },
+  {
+    "id": "inject_source",
+    "severity": "high",
+    "patterns": ["%.Source%s*="],
+    "message": "Escritura de Script.Source (posible inyección en el place)."
+  },
+  {
+    "id": "inject_script_instance",
+    "severity": "medium",
+    "patterns": [
+      "Instance%.new%s*%(%s*[\"']Script[\"']",
+      "Instance%.new%s*%(%s*[\"']LocalScript[\"']"
+    ],
+    "message": "Creación dinámica de Script/LocalScript."
+  },
+  {
+    "id": "teleport_forced",
+    "severity": "high",
+    "patterns": ["TeleportService%s*:Teleport", ":Teleport%s*%("],
+    "message": "TeleportService:Teleport — posible desvío de jugadores."
+  },
+  {
+    "id": "marketplace_prompt",
+    "severity": "medium",
+    "patterns": ["MarketplaceService%s*:Prompt", "PromptGamePassPurchase", "PromptProductPurchase"],
+    "message": "Prompt de compra Marketplace (posible estafa de Robux)."
+  },
+  {
+    "id": "insert_loadasset",
+    "severity": "medium",
+    "patterns": ["InsertService%s*:LoadAsset", ":LoadAsset%s*%("],
+    "message": "InsertService:LoadAsset — inserción dinámica de assets."
+  },
+  {
+    "id": "datastore_wipe",
+    "severity": "high",
+    "patterns": [":SetAsync%s*%(.-,%s*nil%s*%)"],
+    "message": "DataStore SetAsync(..., nil): posible borrado de progreso."
+  },
+  {
+    "id": "legacy_message_spam",
+    "severity": "medium",
+    "patterns": [
+      "Instance%.new%s*%(%s*[\"']Message[\"']",
+      "Instance%.new%s*%(%s*[\"']Hint[\"']"
+    ],
+    "message": "Message/Hint obsoletos: spam o defacement visual."
   },
   {
     "id": "external_url",
     "severity": "medium",
     "patterns": ["https?://[%w%p]+"],
     "message": "URL http(s) embebida en el código."
+  },
+  {
+    "id": "discord_webhook",
+    "severity": "high",
+    "patterns": ["discord%.com/api/webhooks", "discordapp%.com/api/webhooks"],
+    "message": "Webhook de Discord: canal típico de exfiltración."
   }
 ]

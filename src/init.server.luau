@@ -1,7 +1,8 @@
--- PluginGuard — entry (UI + Debug list + Rules engine)
+-- PluginGuard — entry (pestañas Debug / AssetId + motor de reglas)
 
 local MainPanel = require(script:WaitForChild("UI"):WaitForChild("MainPanel"))
 local DebugScanner = require(script:WaitForChild("Scan"):WaitForChild("DebugScanner"))
+local AssetIdScanner = require(script:WaitForChild("Scan"):WaitForChild("AssetIdScanner"))
 local Orchestrator = require(script:WaitForChild("Scan"):WaitForChild("Orchestrator"))
 local Types = require(script:WaitForChild("Rules"):WaitForChild("Types"))
 
@@ -19,35 +20,36 @@ panel.widget.Enabled = false
 local rootsById: { [string]: Instance } = {}
 local metaById: { [string]: { name: string, origin: string } } = {}
 local lastResults: { [string]: any } = {}
+local assetEntriesById: { [string]: any } = {}
+local lastDebugPlugins: { any } = {}
 
-local function formatFindingsDetail(result: any): string
+local function buildFindingRows(result: any): { any }
+	local rows = {}
+	for _, finding in ipairs(result.findings) do
+		table.insert(rows, {
+			severity = finding.severity,
+			title = ("[%s] %s"):format(Types.severityLabel(finding.severity), finding.ruleId),
+			body = ("%s\nScript: %s\n%s"):format(finding.message, finding.scriptPath, finding.snippet),
+		})
+	end
+	return rows
+end
+
+local function formatFindingsHeader(result: any): string
 	local lines = {
 		("Plugin: %s"):format(result.pluginName),
 		("Origen: %s"):format(result.origin),
 		("Scripts OK: %d · fallidos: %d"):format(result.scriptsScanned, result.scriptsFailed),
 		("Badge: %s"):format(Types.badgeLabel(result.badge)),
-		"",
 	}
 
 	if #result.findings == 0 then
+		table.insert(lines, "")
 		table.insert(lines, "Sin hallazgos con las reglas actuales.")
 		table.insert(lines, "Eso no garantiza que sea seguro.")
-		return table.concat(lines, "\n")
-	end
-
-	table.insert(lines, ("Hallazgos (%d):"):format(#result.findings))
-	for _, finding in ipairs(result.findings) do
-		table.insert(
-			lines,
-			("• [%s] %s — %s"):format(
-				Types.severityLabel(finding.severity),
-				finding.ruleId,
-				finding.message
-			)
-		)
-		table.insert(lines, ("  Script: %s"):format(finding.scriptPath))
-		table.insert(lines, ("  %s"):format(finding.snippet))
+	else
 		table.insert(lines, "")
+		table.insert(lines, ("Hallazgos (%d):"):format(#result.findings))
 	end
 
 	return table.concat(lines, "\n")
@@ -73,22 +75,14 @@ local function applyResultToUi(result: any)
 			medium,
 			#result.findings
 		),
-		formatFindingsDetail(result)
+		formatFindingsHeader(result),
+		buildFindingRows(result)
 	)
 end
 
-local function refreshDebugList()
-	panel.setStatus("Estado: Buscando en PluginDebugService…")
-
-	local result = DebugScanner.scan()
-	table.clear(rootsById)
-	table.clear(metaById)
-
+local function toUiEntries(sourceList: { any }): { any }
 	local entries = {}
-	for _, info in ipairs(result.plugins) do
-		rootsById[info.id] = info.root
-		metaById[info.id] = { name = info.name, origin = info.origin }
-
+	for _, info in ipairs(sourceList) do
 		local previous = lastResults[info.id]
 		table.insert(entries, {
 			id = info.id,
@@ -98,24 +92,154 @@ local function refreshDebugList()
 			badge = if previous then Types.badgeLabel(previous.badge) else "—",
 		})
 	end
+	table.sort(entries, function(a, b)
+		return string.lower(a.name) < string.lower(b.name)
+	end)
+	return entries
+end
 
-	panel.setPluginList(entries, result.message)
+local function refreshAssetTab()
+	local list = {}
+	for _, entry in pairs(assetEntriesById) do
+		table.insert(list, entry)
+	end
+	local ui = toUiEntries(list)
+	panel.setAssetEntries(
+		ui,
+		if #ui == 0 then "No hay AssetIds.\nUsa + AssetId para agregar." else nil
+	)
+end
+
+local function refreshDebugList()
+	panel.setStatus("Estado: Buscando en PluginDebugService…")
+
+	local result = DebugScanner.scan()
+	lastDebugPlugins = result.plugins
+
+	for id in pairs(rootsById) do
+		if string.sub(id, 1, 6) == "debug:" then
+			rootsById[id] = nil
+			metaById[id] = nil
+		end
+	end
+
+	for _, info in ipairs(result.plugins) do
+		rootsById[info.id] = info.root
+		metaById[info.id] = { name = info.name, origin = info.origin }
+	end
+
+	for id, entry in pairs(assetEntriesById) do
+		if entry.root and entry.root.Parent then
+			rootsById[id] = entry.root
+			metaById[id] = { name = entry.name, origin = entry.origin }
+		end
+	end
+
+	local debugUi = toUiEntries(result.plugins)
+	panel.setDebugEntries(debugUi, result.message)
+	refreshAssetTab()
+
+	local assetCount = 0
+	for _ in pairs(assetEntriesById) do
+		assetCount += 1
+	end
 
 	if result.debugLikelyEnabled then
 		panel.setDebugLabel(
-			("Plugin Debugging: parece activo\n%d plugin(s) listados"):format(#entries),
+			("Plugin Debugging: activo\nDebug: %d · AssetId: %d"):format(#result.plugins, assetCount),
 			true
 		)
-		panel.setStatus(("Estado: %d plugin(s) listados"):format(#entries))
 	else
 		panel.setDebugLabel(
-			"Plugin Debugging: no se ven plugins\nActiva Plugin Debugging Enabled y reinicia Studio",
+			"Plugin Debugging: vacío/inactivo\nUsa la pestaña AssetId si quieres",
 			false
 		)
-		panel.setStatus("Estado: Debug vacío / inactivo")
+	end
+
+	local tab = panel.getActiveTab()
+	if tab == "debug" then
+		panel.setStatus(("Estado: pestaña Debug · %d plugin(s)"):format(#result.plugins))
+	else
+		panel.setStatus(("Estado: pestaña AssetId · %d item(s)"):format(assetCount))
 	end
 
 	print("[PluginGuard]", result.message)
+end
+
+local function addAssetIds(rawText: string)
+	panel.setStatus("Estado: descargando AssetId…")
+	local result = AssetIdScanner.fetchMany(rawText)
+
+	for _, info in ipairs(result.ok) do
+		assetEntriesById[info.id] = {
+			id = info.id,
+			name = info.name,
+			origin = info.origin,
+			scriptCount = info.scriptCount,
+			root = info.root,
+		}
+		rootsById[info.id] = info.root
+		metaById[info.id] = { name = info.name, origin = info.origin }
+	end
+
+	refreshAssetTab()
+	panel.setActiveTab("asset")
+
+	if #result.errors > 0 then
+		panel.setStatus(("Estado: %d ok · %d error(es)"):format(#result.ok, #result.errors))
+		panel.showScanResult(
+			("AssetId: %d agregados, %d con error"):format(#result.ok, #result.errors),
+			table.concat(result.errors, "\n")
+		)
+	else
+		panel.setStatus(("Estado: %d AssetId en pestaña AssetId"):format(#result.ok))
+		panel.showScanResult(
+			("Se agregaron %d AssetId."):format(#result.ok),
+			"Estás en la pestaña AssetId.\nSelecciona uno y pulsa Escanear este."
+		)
+	end
+
+	print("[PluginGuard] AssetId ok=", #result.ok, "errors=", #result.errors)
+end
+
+local function clearWorkingList()
+	local tab = panel.getActiveTab()
+
+	if tab == "asset" then
+		table.clear(assetEntriesById)
+		for id in pairs(rootsById) do
+			if string.sub(id, 1, 6) == "asset:" then
+				rootsById[id] = nil
+				metaById[id] = nil
+				lastResults[id] = nil
+			end
+		end
+		AssetIdScanner.clearScanFolder()
+		refreshAssetTab()
+		panel.setSelected(nil)
+		panel.showScanResult(
+			"Pestaña AssetId limpia.",
+			"Se quitaron AssetIds y ServerStorage.PluginGuard_Scan."
+		)
+		panel.setStatus("Estado: AssetId limpiados")
+		print("[PluginGuard] Limpió pestaña AssetId")
+		return
+	end
+
+	-- En Debug: limpia solo badges/resultados de debug (no puede “borrar” plugins instalados)
+	for id in pairs(lastResults) do
+		if string.sub(id, 1, 6) == "debug:" then
+			lastResults[id] = nil
+		end
+	end
+	refreshDebugList()
+	panel.setSelected(nil)
+	panel.showScanResult(
+		"Resultados Debug limpiados.",
+		"Los plugins locales siguen instalados; solo se resetearon badges de esta pestaña.\nPara quitar AssetIds, ve a la pestaña AssetId → Limpiar lista."
+	)
+	panel.setStatus("Estado: resultados Debug limpiados")
+	print("[PluginGuard] Limpió resultados Debug")
 end
 
 local function scanSelected()
@@ -126,8 +250,8 @@ local function scanSelected()
 	end
 
 	local root = rootsById[entry.id]
-	if root == nil then
-		panel.setStatus("Estado: no hay root para ese plugin")
+	if root == nil or root.Parent == nil then
+		panel.setStatus("Estado: no hay root (re-agrega AssetId o Re-escanea Debug)")
 		return
 	end
 
@@ -144,10 +268,13 @@ local function scanSelected()
 end
 
 local function scanAll()
+	local tab = panel.getActiveTab()
+	local prefix = if tab == "debug" then "debug:" else "asset:"
+
 	local targets = {}
 	for id, root in pairs(rootsById) do
 		local meta = metaById[id]
-		if meta then
+		if meta and root and root.Parent and string.sub(id, 1, #prefix) == prefix then
 			table.insert(targets, {
 				pluginId = id,
 				pluginName = meta.name,
@@ -158,11 +285,11 @@ local function scanAll()
 	end
 
 	if #targets == 0 then
-		panel.setStatus("Estado: no hay plugins para escanear")
+		panel.setStatus("Estado: no hay plugins en esta pestaña")
 		return
 	end
 
-	panel.setStatus(("Estado: escaneando %d plugin(s)…"):format(#targets))
+	panel.setStatus(("Estado: escaneando pestaña %s (%d)…"):format(tab, #targets))
 	local results = Orchestrator.scanMany(targets)
 
 	local critical, review, okCount = 0, 0, 0
@@ -177,26 +304,51 @@ local function scanAll()
 		end
 	end
 
-	-- Si hay selección, muestra su detalle; si no, resumen global
 	local selected = panel.getSelected()
 	if selected and lastResults[selected.id] then
 		applyResultToUi(lastResults[selected.id])
 	else
 		panel.showScanResult(
-			("Todos: %d🔴 · %d🟡 · %d🟢"):format(critical, review, okCount),
-			"Escaneo de todos terminado.\nSelecciona un plugin para ver su detalle."
+			("Pestaña %s: %d🔴 · %d🟡 · %d🟢"):format(tab, critical, review, okCount),
+			"Escaneo de la pestaña terminado.\nSelecciona un plugin para ver su detalle."
 		)
 	end
 
 	panel.setStatus(
-		("Estado: todos listos — %d🔴 · %d🟡 · %d🟢"):format(critical, review, okCount)
+		("Estado: pestaña %s lista — %d🔴 · %d🟡 · %d🟢"):format(tab, critical, review, okCount)
 	)
-	print("[PluginGuard] Scan all done", #results)
+	print("[PluginGuard] Scan tab", tab, #results)
 end
 
-panel.onRescan(refreshDebugList)
-panel.onAddAssetId(function()
-	panel.setStatus("Estado: + AssetId (próximamente)")
+panel.onRescan(function()
+	if panel.getActiveTab() == "asset" then
+		refreshAssetTab()
+		panel.setStatus("Estado: pestaña AssetId actualizada")
+	else
+		refreshDebugList()
+	end
+end)
+panel.onAssetIdSubmit(addAssetIds)
+panel.onClearList(clearWorkingList)
+panel.onTabChanged(function(tab)
+	panel.setSelected(nil)
+	if tab == "debug" then
+		panel.showScanResult(
+			"Pestaña Debug",
+			"Aquí solo ves plugins locales (PluginDebugService).\nSelecciona uno y escanea."
+		)
+		panel.setStatus(("Estado: pestaña Debug · %d"):format(#lastDebugPlugins))
+	else
+		local n = 0
+		for _ in pairs(assetEntriesById) do
+			n += 1
+		end
+		panel.showScanResult(
+			"Pestaña AssetId",
+			"Aquí solo ves lo que agregaste con + AssetId.\nNo se mezclan con Debug."
+		)
+		panel.setStatus(("Estado: pestaña AssetId · %d"):format(n))
+	end
 end)
 panel.onSelect(function(entry)
 	local previous = lastResults[entry.id]
@@ -205,7 +357,11 @@ panel.onSelect(function(entry)
 	else
 		panel.showScanResult(
 			"Sin escaneo aún para este plugin.",
-			("Nombre: %s\nOrigen: %s\n\nPulsa Escanear este."):format(entry.name, entry.origin)
+			("Nombre: %s\nOrigen: %s\nPestaña: %s\n\nPulsa Escanear este."):format(
+				entry.name,
+				entry.origin,
+				panel.getActiveTab()
+			)
 		)
 	end
 end)
@@ -219,4 +375,4 @@ auditButton.Click:Connect(function()
 	end
 end)
 
-print("[PluginGuard] Cargado — listar Debug + motor de reglas (Catalog en claro)")
+print("[PluginGuard] Cargado — pestañas Debug / AssetId")
